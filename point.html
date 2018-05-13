@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <title>three.js webgl - particles - dynamic - postprocessing</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+    <style>
+        body {
+            color: #fff;
+            font-family: Monospace;
+            font-size: 13px;
+            text-align: center;
+            font-weight: bold;
+
+            background-color: #000;
+            margin: 0px;
+            overflow: hidden;
+        }
+
+        #info {
+            color: #fff;
+            position: absolute;
+            top: 0px;
+            width: 100%;
+            padding: 5px;
+        }
+
+        a {
+            color: red;
+        }
+    </style>
+</head>
+<body>
+
+<div id="container"></div>
+<div id="info">
+</div>
+
+<script src="js/three.js"></script>
+<script src="js/BinaryLoader.js"></script>
+<script src="js/ConvolutionShader.js"></script>
+<script src="js/CopyShader.js"></script>
+<script src="js/FilmShader.js"></script>
+<script src="js/FocusShader.js"></script>
+<script src="js/EffectComposer.js"></script>
+<script src="js/MaskPass.js"></script>
+<script src="js/RenderPass.js"></script>
+<script src="js/BloomPass.js"></script>
+<script src="js/ShaderPass.js"></script>
+<script src="js/FilmPass.js"></script>
+<script src="js/Detector.js"></script>
+<script src="js/OrbitControls.js"></script>
+<script src="js/TweenMax.min.js"></script>
+<script>
+    var testGeo=new THREE.Geometry();
+    var testObject;
+    var worldPosition=[];
+    var carPosition=[];
+    var mvMatrixPeople;
+    var mvMatrixBird;
+    var targetPosition=[];
+    var objectPeople=new THREE.Object3D();
+    var objectCar=new THREE.Object3D();
+    if (!Detector.webgl) Detector.addGetWebGLMessage();
+    var SCREEN_HEIGHT = window.innerHeight;
+    var SCREEN_WIDTH = window.innerWidth;
+    var container;
+    var camera, scene, renderer;
+    var position1 = [];//车
+    var position2 = [];//变形金刚
+    var carGeometry = new THREE.Geometry();
+    var peopleGeometry = new THREE.Geometry();
+    var composer, effectFocus;
+    var control;
+    var js_arr = [
+        "assert/car.js",//车
+        "assert/people.js"//变形金刚
+    ];
+    var gro_arr = new Array();
+    var loader;
+    var time = 0;
+    init();
+    animate();
+    function initGM() {
+        for (var i = 0; i < js_arr.length; i++) {
+            CreateObjModel(js_arr[i], i);
+        }
+    }
+    function CreateObjModel(obj, i) {
+        loader.load(obj, function (geometry) {
+            gro_arr[i] = (geometry);
+            time++;
+        });
+    }
+    function init() {
+        container = document.getElementById('container')
+        camera = new THREE.PerspectiveCamera(20, SCREEN_WIDTH / SCREEN_HEIGHT, 1, 50000);
+        camera.position.set(0, 0, 7000);
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0x000104, 0.0000675);
+        camera.lookAt(scene.position);
+        control = new THREE.OrbitControls(camera);
+        loader = new THREE.BinaryLoader();
+        initGM();
+        renderer = new THREE.WebGLRenderer({antialias: false});
+        renderer.setClearColor(scene.fog.color);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(SCREEN_WIDTH, SCREEN_HEIGHT);
+        renderer.autoClear = false;
+        renderer.sortObjects = false;
+        container.appendChild(renderer.domElement);
+        // postprocessing
+        var renderModel = new THREE.RenderPass(scene, camera);
+        var effectBloom = new THREE.BloomPass(0.75);
+        var effectFilm = new THREE.FilmPass(0.5, 0.5, 1448, false);
+        effectFocus = new THREE.ShaderPass(THREE.FocusShader);
+        effectFocus.uniforms["screenWidth"].value = window.innerWidth;
+        effectFocus.uniforms["screenHeight"].value = window.innerHeight;
+        effectFocus.renderToScreen = true;
+        composer = new THREE.EffectComposer(renderer);
+        composer.addPass(renderModel);
+        composer.addPass(effectBloom);
+        composer.addPass(effectFilm);
+        composer.addPass(effectFocus);
+        window.addEventListener('resize', onWindowResize, false);
+
+    }
+
+    function onWindowResize(event) {
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        camera.lookAt(scene.position);
+        composer.reset();
+        effectFocus.uniforms["screenWidth"].value = window.innerWidth;
+        effectFocus.uniforms["screenHeight"].value = window.innerHeight;
+    }
+    function addPeople(originalGeometry) {
+        var vertices = originalGeometry.vertices;
+        var vl = vertices.length;
+        for (var i = 0; i < vl; i++) {
+            var p = vertices[i];
+            peopleGeometry.vertices[i] = p.clone();
+            position2[i] = p.clone();
+        }
+        mvMatrixPeople=new THREE.Matrix4();
+        mvMatrixPeople.elements[12]=1000;mvMatrixPeople.elements[13]=200;mvMatrixPeople.elements[14]=0;
+        mvMatrixPeople.elements[15]=1;
+    }
+    function addCar(originalGeometry) {
+        var vertices = originalGeometry.vertices;
+        var vl = vertices.length;
+        for (var i = 0; i < vl; i++) {
+            var p = vertices[i];
+            carGeometry.vertices[i] = p.clone();
+            position1[i] = p.clone();
+        }
+        objectCar = new THREE.Points(carGeometry, new THREE.PointsMaterial({
+            size: 60,
+            color: 0xFD7500,
+            map: THREE.ImageUtils.loadTexture('assert/circle.png'),
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthTest: false
+        }));
+        objectCar.scale.set(3,3,3);
+        objectCar.position.x = -800;
+        objectCar.position.y = 0;
+        objectCar.position.z = 0;
+        objectCar.rotateY(-Math.PI*0.25);
+//        scene.add(objectCar);
+        //objectCar.updateMatrix(true);
+        mvMatrixBird=new THREE.Matrix4();
+        mvMatrixBird.elements[0]=3;mvMatrixBird.elements[5]=3;mvMatrixBird.elements[10]=3;
+        mvMatrixBird.elements[12]=-800;mvMatrixBird.elements[13]=0;mvMatrixBird.elements[14]=0;
+        mvMatrixBird.elements[15]=1;
+    }
+    function animate() {
+        requestAnimationFrame(animate);
+        if (time == js_arr.length) {
+            addCar(gro_arr[0]);
+            addPeople(gro_arr[1]);
+            for(var i=0;i<position2.length;i++){
+                var vec4 = new THREE.Vector4();
+                vec4.copy(position2[i]);
+                worldPosition[i]=new THREE.Vector3();
+                worldPosition[i].copy(vec4.applyMatrix4(mvMatrixPeople).clone());
+                var carVec4 = new THREE.Vector4();
+                carVec4.copy(position1[i]);
+                carPosition[i]=new THREE.Vector3();
+                carPosition[i].copy(carVec4.applyMatrix4(objectCar.matrix).clone());
+            }
+            for (var i = 0; i <  worldPosition.length; i++) {
+                testGeo.vertices[i] = worldPosition[i].clone();
+            }
+            testObject = new THREE.Points(testGeo, new THREE.PointsMaterial({
+                size: 60,
+                color: 0xFD7500,
+                map: THREE.ImageUtils.loadTexture('assert/circle.png'),
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthTest: false
+            }));
+
+            scene.add(testObject);
+            time++;
+        }
+        testGeo.verticesNeedUpdate=true;
+        renderer.clear();
+        composer.render(0.1);
+    }
+    document.onkeydown=function(event){
+        var e = event || window.event || arguments.callee.caller.arguments[0];
+        if(e && e.keyCode==65){
+            for(var i=0;i<testGeo.vertices.length;i++){
+                console.log("action");
+                TweenMax.to(
+                    testGeo.vertices[i],
+                    1.5,
+                    {x:carPosition[i].x,y:carPosition[i].y,z:carPosition[i].z,delay:0}
+                    );
+            }
+        }
+    };
+</script>
+
+</body>
+
+</html>

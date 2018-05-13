@@ -1,0 +1,2 @@
+obj转换json和binary文件
+ python convert_obj_three.py -i keyboard.obj -o keyboard.js -t binary
